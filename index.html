@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LMS Matrikulasi Bahasa Inggris 2</title>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📘</text></svg>">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        calm: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            brand: '#4f46e5',
+                            brandHover: '#4338ca'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Quill Rich Text Editor -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #334155; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .ql-editor { min-height: 150px; font-size: 15px; font-family: 'Inter', sans-serif; }
+        .ql-container { border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem; }
+        .ql-toolbar { border-top-left-radius: 0.5rem; border-top-right-radius: 0.5rem; background: #f8fafc; }
+        
+        /* Custom Toast Animation */
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        .toast-enter { animation: slideIn 0.3s ease-out forwards; }
+        .toast-exit { animation: fadeOut 0.3s ease-out forwards; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Global Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex-col items-center justify-center">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center">
+            <i class="fa-solid fa-circle-notch fa-spin text-4xl text-calm-brand mb-4"></i>
+            <p class="text-gray-700 font-semibold animate-pulse">Memproses Data...</p>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-3"></div>
+
+    <!-- Modal Container (for Confirmations & Forms) -->
+    <div id="modal-container" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 hidden items-center justify-center p-4 overflow-y-auto"></div>
+
+    <!-- Main App Container -->
+    <div id="app" class="flex-grow flex flex-col relative w-full h-full"></div>
+
+    <script>
+        // Supabase Configuration
+        const supabaseUrl = 'https://rkewrymcyxozghxlhzhz.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrZXdyeW1jeXhvemdoeGxoemh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1Mzc5NDUsImV4cCI6MjEwNjExMzk0NX0.oDH_-WoFbE3Y1ldOn7fxSAa-pA1yZvczDBnk_13Zwv4';
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+        // Application State
+        let appState = {
+            currentUser: null, // { role: 'admin'|'mahasiswa', data: {} }
+            currentView: 'login', // login, register, admin, mhs
+            adminTab: 'materi', // materi, soal, nilai, pengumuman, mahasiswa
+            mhsTab: 'home', // home, meeting, nilai
+            activeMeeting: null, // 1-8
+            quizMode: false // State for full-page quiz view
+        };
+
+        let cache = { materi: [], pengumuman: [], readingText: [], soal: [], mahasiswa: [] };
+
+        // Utilities: Toast Notification
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let icon = 'fa-info-circle';
+            let bg = 'bg-blue-600';
+            if (type === 'success') { icon = 'fa-check-circle'; bg = 'bg-emerald-600'; }
+            else if (type === 'error') { icon = 'fa-exclamation-triangle'; bg = 'bg-rose-600'; }
+            else if (type === 'warning') { icon = 'fa-exclamation-circle'; bg = 'bg-amber-500'; }
+
+            toast.className = `${bg} text-white px-5 py-4 rounded-xl shadow-lg flex items-center gap-3 toast-enter max-w-sm`;
+            toast.innerHTML = `<i class="fa-solid ${icon} text-xl"></i><span class="font-medium text-sm leading-snug">${message}</span>`;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.remove('toast-enter');
+                toast.classList.add('toast-exit');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function showLoading() { document.getElementById('loading-overlay').classList.replace('hidden', 'flex'); }
+        function hideLoading() { document.getElementById('loading-overlay').classList.replace('flex', 'hidden'); }
+
+        function showModal(contentHtml) {
+            const container = document.getElementById('modal-container');
+            container.innerHTML = `
+                <div class="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl relative" onclick="event.stopPropagation()">
+                    <button onclick="closeModal()" class="absolute top-5 right-5 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-rose-100 hover:text-rose-600 transition-colors z-50" title="Tutup">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                    ${contentHtml}
+                </div>`;
+            container.classList.replace('hidden', 'flex');
+            container.onclick = closeModal;
+        }
+
+        function closeModal() { document.getElementById('modal-container').classList.replace('flex', 'hidden'); }
+
+        function showConfirm(message, onConfirm, isDanger = false) {
+            const btnClass = isDanger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-calm-brand hover:bg-calm-brandHover';
+            const html = `
+                <div class="p-8 text-center">
+                    <div class="inline-flex items-center justify-center w-20 h-20 rounded-full ${isDanger ? 'bg-rose-100 text-rose-600' : 'bg-indigo-100 text-indigo-600'} mb-6">
+                        <i class="fa-solid ${isDanger ? 'fa-triangle-exclamation' : 'fa-circle-question'} text-4xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-3 pr-10">Konfirmasi</h3>
+                    <p class="text-gray-600 mb-8 font-medium">${message}</p>
+                    <div class="flex justify-center gap-4">
+                        <button onclick="closeModal()" class="px-6 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors">Batal</button>
+                        <button id="confirm-btn" class="px-6 py-2.5 rounded-xl text-white font-bold transition-colors ${btnClass}">Ya, Lanjutkan</button>
+                    </div>
+                </div>
+            `;
+            showModal(html);
+            document.getElementById('confirm-btn').onclick = () => {
+                closeModal();
+                onConfirm();
+            };
+        }
+
+        function initQuill(containerId, placeholder = 'Tulis konten di sini...') {
+            const container = document.getElementById(containerId);
+            if (!container) return null;
+            const prevToolbar = container.parentElement.querySelector('.ql-toolbar');
+            if (prevToolbar) prevToolbar.remove();
+
+            return new Quill(`#${containerId}`, {
+                theme: 'snow',
+                placeholder: placeholder,
+                modules: {
+                    toolbar: [
+                        ['bold', 'italic', 'underline', 'strike'],
+                        ['blockquote', 'code-block'],
+                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                        [{ 'script': 'sub'}, { 'script': 'super' }],
+                        [{ 'indent': '-1'}, { 'indent': '+1' }],
+                        [{ 'header': [1, 2, 3, false] }],
+                        [{ 'color': [] }, { 'background': [] }],
+                        [{ 'align': [] }],
+                        ['link', 'image', 'video'],
+                        ['clean']
+                    ]
+                }
+            });
+        }
+
+        function navigate(view) {
+            appState.currentView = view;
+            renderApp();
+        }
+
+        function renderApp() {
+            const app = document.getElementById('app');
+            if (appState.currentView === 'login') {
+                app.innerHTML = renderLogin();
+                attachLoginEvents();
+            } else if (appState.currentView === 'register') {
+                app.innerHTML = renderRegister();
+                attachRegisterEvents();
+            } else if (appState.currentView === 'admin') {
+                app.innerHTML = renderAdminLayout();
+                renderAdminContent();
+            } else if (appState.currentView === 'mhs') {
+                app.innerHTML = renderMhsLayout();
+                renderMhsContent();
+            }
+        }
+
+        window.logout = () => {
+            showConfirm('Yakin ingin keluar dari aplikasi?', () => {
+                appState.currentUser = null;
+                appState.adminTab = 'materi';
+                appState.mhsTab = 'home';
+                appState.activeMeeting = null;
+                appState.quizMode = false;
+                showToast('Anda telah berhasil logout', 'info');
+                navigate('login');
+            }, true);
+        };
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+                    <div class="sm:mx-auto sm:w-full sm:max-w-md text-center">
+                        <div class="inline-flex items-center justify-center w-20 h-20 bg-calm-brand rounded-2xl shadow-lg mb-4 transform rotate-3 hover:rotate-0 transition-transform">
+                            <i class="fa-solid fa-book-open text-4xl text-white"></i>
+                        </div>
+                        <h2 class="text-center text-3xl font-black text-gray-900 tracking-tight">E-Learning B.Inggris 2</h2>
+                        <p class="mt-2 text-center text-sm text-gray-600 font-medium">Program S1 Transportasi (RPL)</p>
+                    </div>
+
+                    <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+                        <div class="glass-panel py-8 px-4 shadow-xl sm:rounded-3xl sm:px-10 border-t-4 border-t-calm-brand">
+                            <div id="login-announcement" class="mb-6 hidden"></div>
+                            <form id="login-form" class="space-y-6">
+                                <div>
+                                    <label class="block text-sm font-bold text-gray-700">NIM / Username Dosen</label>
+                                    <div class="mt-1 relative rounded-md shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fa-solid fa-user text-gray-400"></i></div>
+                                        <input id="uid" type="text" required class="focus:ring-calm-brand focus:border-calm-brand block w-full pl-10 sm:text-sm border-gray-300 rounded-xl py-3 bg-gray-50 border outline-none" placeholder="Masukkan NIM atau Email">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-bold text-gray-700">Password</label>
+                                    <div class="mt-1 relative rounded-md shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fa-solid fa-lock text-gray-400"></i></div>
+                                        <input id="password" type="password" required class="focus:ring-calm-brand focus:border-calm-brand block w-full pl-10 sm:text-sm border-gray-300 rounded-xl py-3 bg-gray-50 border outline-none" placeholder="••••••••">
+                                    </div>
+                                </div>
+                                <div>
+                                    <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-md text-sm font-bold text-white bg-calm-brand hover:bg-calm-brandHover transition-transform active:scale-95">Masuk ke Aplikasi</button>
+                                </div>
+                            </form>
+                            <div class="mt-6 text-center">
+                                <p class="text-sm text-gray-600 font-medium">Mahasiswa baru? <a href="#" onclick="navigate('register')" class="font-bold text-calm-brand hover:text-indigo-500">Daftar di sini</a></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function attachLoginEvents() {
+            setTimeout(async () => {
+                try {
+                    const { data } = await supabaseClient.from('pengumuman').select('*').order('created_at', { ascending: false }).limit(1);
+                    if (data && data.length > 0) {
+                        const annContainer = document.getElementById('login-announcement');
+                        if (annContainer) {
+                            annContainer.innerHTML = `
+                                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 flex items-start gap-3">
+                                    <i class="fa-solid fa-bullhorn text-indigo-500 mt-1"></i>
+                                    <div>
+                                        <h4 class="font-bold text-indigo-900 text-sm">${data[0].judul}</h4>
+                                        <div class="text-xs text-indigo-700 mt-1 line-clamp-2">${data[0].konten}</div>
+                                    </div>
+                                </div>
+                            `;
+                            annContainer.classList.remove('hidden');
+                        }
+                    }
+                } catch (err) {}
+            }, 500);
+
+            const form = document.getElementById('login-form');
+            if(!form) return;
+
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                showLoading();
+                
+                const uid = document.getElementById('uid').value.trim().toLowerCase();
+                const pass = document.getElementById('password').value.trim();
+
+                try {
+                    const { data: adminData, error: adminErr } = await supabaseClient.from('admin').select('*').ilike('username', uid).maybeSingle();
+                    
+                    if (adminData) {
+                        if (adminData.password.trim() === pass) {
+                            appState.currentUser = { role: 'admin', data: adminData };
+                            showToast('Berhasil login sebagai Dosen', 'success');
+                            navigate('admin');
+                        } else {
+                            showToast('Password Dosen salah!', 'error');
+                        }
+                        hideLoading();
+                        return;
+                    }
+
+                    const { data: mhsData, error: mhsErr } = await supabaseClient.from('mahasiswa').select('*').ilike('nim', uid).maybeSingle();
+                    
+                    if (mhsData) {
+                        if (mhsData.password.trim() === pass) {
+                            appState.currentUser = { role: 'mahasiswa', data: mhsData };
+                            showToast(`Selamat datang, ${mhsData.nama_lengkap}`, 'success');
+                            navigate('mhs');
+                        } else {
+                            showToast('Password Mahasiswa salah!', 'error');
+                        }
+                    } else {
+                        showToast('Username/NIM tidak ditemukan!', 'error');
+                    }
+                } catch (err) {
+                    showToast('Gagal terhubung ke database. Pastikan RLS dimatikan.', 'error');
+                }
+                hideLoading();
+            };
+        }
+
+        function renderRegister() {
+            return `
+                <div class="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-slate-50">
+                    <div class="sm:mx-auto sm:w-full sm:max-w-md">
+                        <div class="bg-white py-8 px-4 shadow sm:rounded-2xl sm:px-10 border-t-4 border-calm-brand">
+                            <div class="text-center mb-6">
+                                <h2 class="text-2xl font-black text-gray-900">Pendaftaran Mahasiswa</h2>
+                                <p class="text-sm text-gray-500 mt-1">Lengkapi data di bawah ini</p>
+                            </div>
+                            <form id="register-form" class="space-y-4">
+                                <div><label class="block text-sm font-bold text-gray-700">NIM</label><input id="reg-nim" type="text" required class="mt-1 block w-full border rounded-lg py-2.5 px-3 focus:border-calm-brand"></div>
+                                <div><label class="block text-sm font-bold text-gray-700">Nama Lengkap</label><input id="reg-nama" type="text" required class="mt-1 block w-full border rounded-lg py-2.5 px-3 focus:border-calm-brand"></div>
+                                <div>
+                                    <label class="block text-sm font-bold text-gray-700">Program Studi (RPL)</label>
+                                    <select id="reg-prodi" required class="mt-1 block w-full border rounded-lg py-2.5 px-3 focus:border-calm-brand bg-white">
+                                        <option value="">-- Pilih Prodi --</option>
+                                        <option value="Transportasi">Transportasi</option>
+                                        <option value="Teknik Transportasi Laut">Teknik Transportasi Laut</option>
+                                        <option value="Teknik Keselamatan">Teknik Keselamatan</option>
+                                        <option value="Teknik Mesin">Teknik Mesin</option>
+                                        <option value="Perdagangan Internasional">Perdagangan Internasional</option>
+                                    </select>
+                                </div>
+                                <div><label class="block text-sm font-bold text-gray-700">Password</label><input id="reg-password" type="password" required class="mt-1 block w-full border rounded-lg py-2.5 px-3 focus:border-calm-brand"></div>
+                                <div class="pt-2"><button type="submit" class="w-full py-3 text-white bg-calm-brand rounded-xl font-bold hover:bg-calm-brandHover">Daftar Sekarang</button></div>
+                            </form>
+                            <div class="mt-6 text-center"><button onclick="navigate('login')" class="text-sm font-medium text-gray-600 hover:text-calm-brand">Kembali ke Login</button></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function attachRegisterEvents() {
+            const form = document.getElementById('register-form');
+            if(!form) return;
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                showLoading();
+                const nim = document.getElementById('reg-nim').value;
+                const nama = document.getElementById('reg-nama').value;
+                const prodi = document.getElementById('reg-prodi').value;
+                const password = document.getElementById('reg-password').value;
+
+                try {
+                    const { error } = await supabaseClient.from('mahasiswa').insert([{ nim, nama_lengkap: nama, prodi, password }]);
+                    if (error) throw error;
+                    showToast('Pendaftaran berhasil!', 'success');
+                    navigate('login');
+                } catch (err) {
+                    if(err.code === '23505') showToast('NIM sudah terdaftar!', 'error');
+                    else showToast('Gagal mendaftar', 'error');
+                }
+                hideLoading();
+            };
+        }
+
+        function renderAdminLayout() {
+            const tabs = [
+                { id: 'materi', icon: 'fa-book', text: 'Materi' },
+                { id: 'soal', icon: 'fa-pen-to-square', text: 'Kuis/Soal' },
+                { id: 'nilai', icon: 'fa-chart-bar', text: 'Nilai' },
+                { id: 'pengumuman', icon: 'fa-bullhorn', text: 'Pengumuman' },
+                { id: 'mahasiswa', icon: 'fa-users', text: 'Mahasiswa' }
+            ];
+
+            return `
+                <div class="flex h-screen bg-slate-50 overflow-hidden">
+                    <div class="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
+                        <div class="p-6 border-b border-gray-100 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-calm-brand text-white flex items-center justify-center font-bold text-xl shadow-md"><i class="fa-solid fa-graduation-cap"></i></div>
+                            <div>
+                                <h1 class="text-sm font-black text-gray-800 leading-tight">Dashboard Dosen</h1>
+                                <p class="text-[11px] text-gray-500 font-medium">B. Inggris 2</p>
+                            </div>
+                        </div>
+                        <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+                            ${tabs.map(t => `
+                                <button onclick="window.switchAdminTab('${t.id}')" class="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${appState.adminTab === t.id ? 'bg-indigo-50 text-calm-brand' : 'text-gray-600 hover:bg-gray-50'}">
+                                    <i class="fa-solid ${t.icon} w-5 text-center ${appState.adminTab === t.id ? 'text-calm-brand' : 'text-gray-400'}"></i> ${t.text}
+                                </button>
+                            `).join('')}
+                        </nav>
+                        <div class="p-4 border-t border-gray-100">
+                            <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-rose-600 bg-rose-50 rounded-xl hover:bg-rose-100 transition-colors">
+                                <i class="fa-solid fa-arrow-right-from-bracket"></i> Keluar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto" id="admin-content-area"></div>
+                </div>
+            `;
+        }
+
+        window.switchAdminTab = (tab) => { appState.adminTab = tab; renderApp(); };
+
+        async function renderAdminContent() {
+            const container = document.getElementById('admin-content-area');
+            if(!container) return;
+            
+            showLoading();
+            container.innerHTML = '<div class="p-8 h-full flex flex-col" id="tab-container"></div>';
+            const tabContainer = document.getElementById('tab-container');
+
+            try {
+                if (appState.adminTab === 'materi') await renderAdminMateri(tabContainer);
+                else if (appState.adminTab === 'soal') await renderAdminSoal(tabContainer);
+                else if (appState.adminTab === 'nilai') await renderAdminNilai(tabContainer);
+                else if (appState.adminTab === 'pengumuman') await renderAdminPengumuman(tabContainer);
+                else if (appState.adminTab === 'mahasiswa') await renderAdminMahasiswa(tabContainer);
+            } catch (err) {
+                console.error(err);
+                tabContainer.innerHTML = `<div class="bg-rose-50 text-rose-600 p-4 rounded-xl font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Terjadi kesalahan saat memuat data.</div>`;
+            }
+            hideLoading();
+        }
+
+        async function renderAdminMateri(container) {
+            const { data } = await supabaseClient.from('materi').select('*').order('pertemuan', { ascending: true });
+            cache.materi = data || [];
+
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-gray-800">Manajemen Materi</h2>
+                        <p class="text-gray-500 text-sm font-medium">Kelola materi untuk 8 pertemuan.</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    ${[1,2,3,4,5,6,7,8].map(p => {
+                        const m = cache.materi.find(x => x.pertemuan === p);
+                        if (!m) return `<div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">Pertemuan ${p} (Data Kosong)</div>`;
+                        
+                        return `
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+                            <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                                <span class="font-bold text-sm text-gray-700">Pertemuan ${p}</span>
+                                <span class="text-[10px] px-2 py-1 rounded font-bold ${m.is_active ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}">${m.is_active ? 'AKTIF' : 'NONAKTIF'}</span>
+                            </div>
+                            <div class="p-4 flex-1 flex flex-col">
+                                <h3 class="font-bold text-gray-800 text-sm mb-2 line-clamp-2">${m.judul}</h3>
+                                <p class="text-xs text-gray-500 line-clamp-3 mb-4">${m.konten ? m.konten.replace(/<[^>]*>?/gm, '') : 'Belum ada konten'}</p>
+                                <div class="mt-auto pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+                                    <button onclick="window.editMateri('${m.id}')" class="text-xs font-bold text-center py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition"><i class="fa-solid fa-pen mr-1"></i> Edit</button>
+                                    <button onclick="window.toggleMateri('${m.id}', ${!m.is_active})" class="text-xs font-bold text-center py-2 ${m.is_active ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'} rounded-lg transition"><i class="fa-solid ${m.is_active ? 'fa-lock' : 'fa-unlock'} mr-1"></i> ${m.is_active ? 'Kunci' : 'Buka'}</button>
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        window.editMateri = (id) => {
+            const m = cache.materi.find(x => x.id === id);
+            if (!m) return;
+            showModal(`
+                <div class="p-6">
+                    <h3 class="text-xl font-bold mb-4 border-b pb-2 pr-10">Edit Materi Pertemuan ${m.pertemuan}</h3>
+                    <div class="space-y-4">
+                        <div><label class="block text-sm font-bold mb-1">Judul Materi</label><input id="em-judul" type="text" class="w-full border rounded-lg p-2" value="${m.judul}"></div>
+                        <div><label class="block text-sm font-bold mb-1">Link Video/Audio (Opsional)</label><input id="em-media" type="url" class="w-full border rounded-lg p-2" value="${m.media_link || ''}"></div>
+                        <div>
+                            <label class="block text-sm font-bold mb-1">Konten Materi</label>
+                            <div class="bg-white"><div id="editor-materi">${m.konten || ''}</div></div>
+                        </div>
+                        <div class="flex justify-end gap-3 pt-4 mt-2">
+                            <button onclick="closeModal()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition">Batal</button>
+                            <button id="btn-save-materi" class="bg-calm-brand text-white px-6 py-2 rounded-lg font-bold hover:bg-calm-brandHover transition">Simpan Perubahan</button>
+                        </div>
+                    </div>
+                </div>
+            `);
+            const quill = initQuill('editor-materi');
+            document.getElementById('btn-save-materi').onclick = async () => {
+                showLoading();
+                try {
+                    await supabaseClient.from('materi').update({ judul: document.getElementById('em-judul').value, konten: quill.root.innerHTML, media_link: document.getElementById('em-media').value }).eq('id', id);
+                    showToast('Materi berhasil diperbarui', 'success');
+                    closeModal();
+                    renderAdminContent();
+                } catch(e) { showToast('Gagal menyimpan', 'error'); }
+                hideLoading();
+            };
+        };
+
+        window.toggleMateri = async (id, activate) => {
+            showLoading();
+            try {
+                await supabaseClient.from('materi').update({ is_active: activate }).eq('id', id);
+                showToast(`Materi berhasil di${activate ? 'aktif' : 'nonaktif'}kan`, 'success');
+                renderAdminContent();
+            } catch(e) { showToast('Gagal mengubah', 'error'); }
+            hideLoading();
+        };
+
+        async function renderAdminSoal(container) {
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-gray-800">Manajemen Kuis & Soal</h2>
+                        <p class="text-gray-500 text-sm font-medium">Pilih pertemuan untuk mengelola soal.</p>
+                    </div>
+                    <select id="pilih-pertemuan-soal" class="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold text-gray-700 bg-white focus:border-calm-brand outline-none" onchange="window.loadSoalData(this.value)">
+                        <option value="">-- Pilih Pertemuan --</option>
+                        ${[1,2,3,4,5,6,7,8].map(p => `<option value="${p}">Pertemuan ${p}</option>`).join('')}
+                    </select>
+                </div>
+                <div id="soal-workspace" class="hidden flex flex-col lg:flex-row gap-6">
+                    <div class="lg:w-1/3 space-y-4">
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+                            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                                <h3 class="font-bold text-gray-800"><i class="fa-solid fa-book-open mr-2"></i> Reading Text</h3>
+                                <button onclick="window.formRT()" class="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg font-bold"><i class="fa-solid fa-plus"></i> Tambah</button>
+                            </div>
+                            <div id="rt-list" class="space-y-3 max-h-[500px] overflow-y-auto pr-1"></div>
+                        </div>
+                    </div>
+                    <div class="lg:w-2/3 space-y-4">
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+                            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                                <h3 class="font-bold text-gray-800"><i class="fa-solid fa-list-check mr-2"></i> Daftar Soal</h3>
+                                <button onclick="window.formSoal()" class="text-xs bg-calm-brand text-white px-4 py-1.5 rounded-lg font-bold"><i class="fa-solid fa-plus"></i> Buat Soal</button>
+                            </div>
+                            <div id="soal-list" class="space-y-3 max-h-[600px] overflow-y-auto pr-2"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.loadSoalData = async (p) => {
+            if (!p) { document.getElementById('soal-workspace').classList.add('hidden'); return; }
+            appState.activeMeeting = parseInt(p);
+            document.getElementById('soal-workspace').classList.remove('hidden');
+            showLoading();
+            try {
+                const rtContainer = document.getElementById('rt-list');
+                const soalContainer = document.getElementById('soal-list');
+                
+                const { data: rtData } = await supabaseClient.from('reading_text').select('*').eq('pertemuan', p);
+                cache.readingText = rtData || [];
+                
+                if(rtContainer) {
+                    rtContainer.innerHTML = cache.readingText.length ? cache.readingText.map(rt => `
+                        <div class="border rounded-xl p-3 bg-gray-50 relative group">
+                            <h4 class="font-bold text-sm mb-1">${rt.judul || 'Tanpa Judul'}</h4>
+                            <div class="text-xs text-gray-600 line-clamp-3">${rt.konten.replace(/<[^>]*>?/gm, '')}</div>
+                            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
+                                <button onclick="window.formRT('${rt.id}')" class="bg-white shadow text-blue-600 p-1.5 rounded"><i class="fa-solid fa-pen text-xs"></i></button>
+                                <button onclick="window.delRT('${rt.id}')" class="bg-white shadow text-rose-600 p-1.5 rounded"><i class="fa-solid fa-trash text-xs"></i></button>
+                            </div>
+                        </div>
+                    `).join('') : '<p class="text-sm text-gray-400 italic text-center py-4">Belum ada data</p>';
+                }
+
+                const { data: soalData } = await supabaseClient.from('soal').select('*').eq('pertemuan', p).order('created_at', { ascending: true });
+                cache.soal = soalData || [];
+                
+                if(soalContainer) {
+                    soalContainer.innerHTML = cache.soal.length ? cache.soal.map((s, i) => `
+                        <div class="border rounded-xl p-4 bg-white flex gap-4 hover:border-indigo-200 transition">
+                            <div class="w-8 h-8 shrink-0 bg-indigo-50 text-indigo-700 font-black rounded-lg flex items-center justify-center">${i+1}</div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-[10px] bg-gray-100 font-bold px-2 py-0.5 rounded uppercase">${s.tipe_soal.replace('_', ' ')}</span>
+                                    <span class="text-[10px] bg-yellow-100 text-yellow-800 font-bold px-2 py-0.5 rounded">Bobot: ${s.bobot_nilai}</span>
+                                </div>
+                                <div class="text-sm font-medium text-gray-800 line-clamp-2">${s.pertanyaan.replace(/<[^>]*>?/gm, '')}</div>
+                            </div>
+                            <div class="flex flex-col gap-2 shrink-0 border-l pl-4">
+                                <button onclick="window.formSoal('${s.id}')" class="text-indigo-600 hover:text-indigo-800"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button onclick="window.delSoal('${s.id}')" class="text-rose-600 hover:text-rose-800"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </div>
+                    `).join('') : '<p class="text-sm text-gray-400 italic text-center py-4">Belum ada soal</p>';
+                }
+            } catch (err) {}
+            hideLoading();
+        };
+
+        window.formSoal = (id = null) => {
+            const p = appState.activeMeeting;
+            if(!p) return showToast('Pilih pertemuan dulu', 'warning');
+            const s = id ? cache.soal.find(x => x.id === id) : { tipe_soal: 'pilihan_ganda', bobot_nilai: 10, pilihan_jawaban: [] };
+            
+            showModal(`
+                <div class="p-6">
+                    <h3 class="text-xl font-bold mb-4 border-b pb-2">${id ? 'Edit' : 'Buat'} Soal (Pertemuan ${p})</h3>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold mb-1">Tipe Soal</label>
+                                <select id="fs-tipe" class="w-full border rounded-lg p-2" onchange="window.togglePgOptions(this.value)">
+                                    <option value="pilihan_ganda" ${s.tipe_soal === 'pilihan_ganda' ? 'selected':''}>Pilihan Ganda</option>
+                                    <option value="isian" ${s.tipe_soal === 'isian' ? 'selected':''}>Isian Singkat</option>
+                                    <option value="essay" ${s.tipe_soal === 'essay' ? 'selected':''}>Essay</option>
+                                    <option value="upload_file" ${s.tipe_soal === 'upload_file' ? 'selected':''}>Tugas (Upload File)</option>
+                                </select>
+                            </div>
+                            <div><label class="block text-sm font-bold mb-1">Bobot Poin</label><input id="fs-bobot" type="number" class="w-full border rounded-lg p-2" value="${s.bobot_nilai}"></div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold mb-1">Tautkan ke Reading Text (Opsional)</label>
+                            <select id="fs-reading-text" class="w-full border rounded-lg p-2 bg-gray-50 focus:border-calm-brand outline-none">
+                                <option value="">-- Tidak ditautkan --</option>
+                                ${cache.readingText.map(rt => `<option value="${rt.id}" ${s.reading_text_id === rt.id ? 'selected' : ''}>${rt.judul || 'Tanpa Judul'}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold mb-1">Pertanyaan / Instruksi</label>
+                            <div class="bg-white"><div id="editor-soal">${s.pertanyaan || ''}</div></div>
+                        </div>
+                        <div id="pg-options-container" class="${s.tipe_soal === 'pilihan_ganda' ? 'block' : 'hidden'} bg-gray-50 p-4 rounded-xl border">
+                            <label class="block text-sm font-bold mb-2">Pilihan Ganda (Beri centang pada kunci jawaban)</label>
+                            <div class="space-y-2">
+                                ${['A','B','C','D'].map((x, i) => `
+                                    <div class="flex items-center gap-2">
+                                        <input type="radio" name="fs-kunci-pg" value="${x}" ${s.kunci_jawaban === x ? 'checked':''} class="w-4 h-4">
+                                        <span class="font-bold w-4">${x}.</span>
+                                        <input type="text" id="fs-pg-${x}" class="flex-1 border rounded p-1.5 text-sm" value="${(s.pilihan_jawaban||[])[i] || ''}">
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div id="non-pg-kunci" class="${s.tipe_soal === 'isian' ? 'block' : 'hidden'}">
+                            <label class="block text-sm font-bold mb-1">Kunci Jawaban (Hanya untuk isian singkat)</label>
+                            <input id="fs-kunci-isian" type="text" class="w-full border rounded-lg p-2" value="${s.tipe_soal !== 'pilihan_ganda' ? (s.kunci_jawaban || '') : ''}">
+                        </div>
+                        <div class="flex justify-end gap-3 pt-4 mt-2 border-t">
+                            <button onclick="closeModal()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition">Batal</button>
+                            <button id="btn-save-soal" class="bg-calm-brand text-white px-6 py-2 rounded-lg font-bold hover:bg-calm-brandHover transition">Simpan Soal</button>
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            const quill = initQuill('editor-soal');
+            window.togglePgOptions = (val) => {
+                document.getElementById('pg-options-container').className = val === 'pilihan_ganda' ? 'block bg-gray-50 p-4 rounded-xl border' : 'hidden';
+                document.getElementById('non-pg-kunci').className = val === 'isian' ? 'block' : 'hidden';
+            };
+
+            document.getElementById('btn-save-soal').onclick = async () => {
+                showLoading();
+                const tipe = document.getElementById('fs-tipe').value;
+                const bobot = parseFloat(document.getElementById('fs-bobot').value || 0);
+                const rtId = document.getElementById('fs-reading-text').value || null;
+                const pertanyaan = quill.root.innerHTML;
+                let pilihan = null; let kunci = null;
+
+                if (tipe === 'pilihan_ganda') {
+                    pilihan = ['A','B','C','D'].map(x => document.getElementById(`fs-pg-${x}`).value);
+                    const checked = document.querySelector('input[name="fs-kunci-pg"]:checked');
+                    kunci = checked ? checked.value : null;
+                } else if (tipe === 'isian') {
+                    kunci = document.getElementById('fs-kunci-isian').value;
+                }
+
+                try {
+                    const payload = { pertemuan: p, tipe_soal: tipe, pertanyaan, pilihan_jawaban: pilihan, kunci_jawaban: kunci, bobot_nilai: bobot, reading_text_id: rtId };
+                    if (id) await supabaseClient.from('soal').update(payload).eq('id', id);
+                    else await supabaseClient.from('soal').insert([payload]);
+                    showToast('Soal disimpan', 'success');
+                    closeModal();
+                    window.loadSoalData(p);
+                } catch(e) { showToast('Gagal menyimpan soal', 'error'); }
+                hideLoading();
+            };
+        };
+
+        window.delSoal = (id) => {
+            showConfirm('Yakin ingin menghapus?', async () => {
+                showLoading();
+                await supabaseClient.from('soal').delete().eq('id', id);
+                window.loadSoalData(appState.activeMeeting);
+                hideLoading();
+            }, true);
+        };
+
+        window.formRT = (id = null) => {
+            const p = appState.activeMeeting;
+            const rt = id ? cache.readingText.find(x => x.id === id) : {};
+            showModal(`
+                <div class="p-6">
+                    <h3 class="text-xl font-bold mb-4 border-b pb-2 pr-10">Reading Text (Pertemuan ${p})</h3>
+                    <div class="space-y-4">
+                        <div><label class="block text-sm font-bold mb-1">Judul</label><input id="frt-judul" type="text" class="w-full border rounded-lg p-2" value="${rt.judul || ''}"></div>
+                        <div><label class="block text-sm font-bold mb-1">Isi Text</label><div class="bg-white"><div id="editor-rt" style="min-height: 200px;">${rt.konten || ''}</div></div></div>
+                        <div class="flex justify-end gap-3 pt-4 mt-2 border-t">
+                            <button onclick="closeModal()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition">Batal</button>
+                            <button id="btn-save-rt" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition">Simpan</button>
+                        </div>
+                    </div>
+                </div>
+            `);
+            const quill = initQuill('editor-rt');
+            document.getElementById('btn-save-rt').onclick = async () => {
+                showLoading();
+                try {
+                    const payload = { pertemuan: p, judul: document.getElementById('frt-judul').value, konten: quill.root.innerHTML };
+                    if(id) await supabaseClient.from('reading_text').update(payload).eq('id', id);
+                    else await supabaseClient.from('reading_text').insert([payload]);
+                    showToast('Reading text disimpan', 'success');
+                    closeModal();
+                    window.loadSoalData(p);
+                } catch(e) { showToast('Gagal menyimpan text', 'error'); }
+                hideLoading();
+            };
+        };
+        window.delRT = (id) => {
+            showConfirm('Hapus text ini?', async () => {
+                showLoading();
+                await supabaseClient.from('reading_text').delete().eq('id', id);
+                window.loadSoalData(appState.activeMeeting);
+                hideLoading();
+            }, true);
+        };
+
+        async function renderAdminNilai(container) {
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-gray-800">Penilaian Mahasiswa</h2>
+                        <p class="text-gray-500 text-sm font-medium">Pilih pertemuan untuk melihat/menilai tugas.</p>
+                    </div>
+                    <select class="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold text-gray-700 bg-white" onchange="window.loadNilaiData(this.value)">
+                        <option value="">-- Pilih Pertemuan --</option>
+                        ${[1,2,3,4,5,6,7,8].map(p => `<option value="${p}">Pertemuan ${p}</option>`).join('')}
+                    </select>
+                </div>
+                <div id="nilai-workspace" class="hidden">
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden" id="nilai-table-container"></div>
+                </div>
+            `;
+        }
+
+        window.loadNilaiData = async (p) => {
+            if(!p) { document.getElementById('nilai-workspace').classList.add('hidden'); return; }
+            appState.activeMeeting = parseInt(p);
+            document.getElementById('nilai-workspace').classList.remove('hidden');
+            
+            showLoading();
+            try {
+                const { data: mhsData } = await supabaseClient.from('mahasiswa').select('*');
+                const { data: nilaiData } = await supabaseClient.from('nilai_pertemuan').select('*').eq('pertemuan', p);
+                
+                const tableHtml = `
+                    <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-200 text-sm text-gray-600">
+                                <th class="p-4 font-bold">Mahasiswa</th>
+                                <th class="p-4 font-bold text-center">PG / Otomatis</th>
+                                <th class="p-4 font-bold text-center">Manual</th>
+                                <th class="p-4 font-bold text-center">Total Skor</th>
+                                <th class="p-4 font-bold text-center">Status</th>
+                                <th class="p-4 font-bold text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${mhsData.map(m => {
+                                const n = nilaiData.find(x => x.mahasiswa_id === m.id);
+                                if (!n) return `
+                                    <tr class="border-b border-gray-100">
+                                        <td class="p-4 font-bold text-gray-800">${m.nama_lengkap} <br><span class="text-xs text-gray-500 font-normal">${m.nim}</span></td>
+                                        <td class="p-4 text-center text-gray-400">-</td><td class="p-4 text-center text-gray-400">-</td><td class="p-4 text-center text-gray-400">-</td>
+                                        <td class="p-4 text-center"><span class="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded font-bold">Belum Mengerjakan</span></td>
+                                        <td class="p-4 text-center text-gray-400">-</td>
+                                    </tr>
+                                `;
+                                const statusClass = n.status_penilaian === 'selesai' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+                                const statusText = n.status_penilaian === 'selesai' ? 'Selesai Dinilai' : 'Menunggu Penilaian';
+                                return `
+                                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                        <td class="p-4 font-bold text-gray-800">${m.nama_lengkap} <br><span class="text-xs text-gray-500 font-normal">${m.nim}</span></td>
+                                        <td class="p-4 text-center font-bold text-gray-700">${n.skor_otomatis}</td>
+                                        <td class="p-4 text-center font-bold text-indigo-600">${n.skor_manual}</td>
+                                        <td class="p-4 text-center font-black text-gray-900 text-lg">${n.skor_total}</td>
+                                        <td class="p-4 text-center"><span class="${statusClass} text-xs px-2 py-1 rounded font-bold">${statusText}</span></td>
+                                        <td class="p-4 text-center flex justify-center gap-2">
+                                            <button onclick="window.koreksiJawaban('${m.id}', '${m.nama_lengkap}', ${p})" class="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-indigo-100 transition"><i class="fa-solid fa-list-check mr-1"></i> Koreksi</button>
+                                            <button onclick="window.resetNilai('${m.id}', ${p})" class="bg-rose-50 text-rose-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-rose-100 transition" title="Reset"><i class="fa-solid fa-rotate-left"></i></button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table></div>
+                `;
+                document.getElementById('nilai-table-container').innerHTML = tableHtml;
+            } catch(e) {}
+            hideLoading();
+        };
+
+        window.resetNilai = (mhsId, p) => {
+            showConfirm('Yakin ingin mereset kuis ini? Semua jawaban dan nilai akan dihapus permanen, dan mahasiswa harus mengerjakan dari awal.', async () => {
+                showLoading();
+                try {
+                    await supabaseClient.from('jawaban_mahasiswa').delete().eq('mahasiswa_id', mhsId).eq('pertemuan', p);
+                    await supabaseClient.from('nilai_pertemuan').delete().eq('mahasiswa_id', mhsId).eq('pertemuan', p);
+                    showToast('Nilai berhasil direset', 'success');
+                    window.loadNilaiData(p);
+                } catch(e) { showToast('Gagal mereset', 'error'); }
+                hideLoading();
+            }, true);
+        };
+
+        window.koreksiJawaban = async (mhsId, nama, p) => {
+            showLoading();
+            try {
+                const { data: soalData } = await supabaseClient.from('soal').select('*').eq('pertemuan', p).order('created_at', { ascending: true });
+                const { data: jwbData } = await supabaseClient.from('jawaban_mahasiswa').select('*').eq('mahasiswa_id', mhsId).eq('pertemuan', p);
+                const { data: nilaiDataArr } = await supabaseClient.from('nilai_pertemuan').select('*').eq('mahasiswa_id', mhsId).eq('pertemuan', p);
+                const nilaiData = nilaiDataArr?.[0];
+
+                let html = `<div class="p-6">
+                    <h3 class="text-xl font-bold mb-2 pr-10">Koreksi Jawaban: ${nama}</h3>
+                    <p class="text-sm text-gray-500 mb-6 border-b pb-4">Pertemuan ${p} &bull; Skor Otomatis: <span class="font-bold">${nilaiData?.skor_otomatis || 0}</span></p>
+                    <div class="space-y-6">`;
+                
+                soalData.forEach((s, idx) => {
+                    const j = jwbData.find(x => x.soal_id === s.id);
+                    let jawabanTampil = '<span class="italic text-gray-400">Tidak dijawab</span>';
+                    if (j) {
+                        if (s.tipe_soal === 'upload_file' && j.file_url) jawabanTampil = `<a href="${j.file_url}" target="_blank" class="text-blue-600 underline font-bold"><i class="fa-solid fa-download"></i> Unduh Lampiran Tugas</a>`;
+                        else jawabanTampil = j.jawaban_teks || '<span class="italic text-gray-400">Kosong</span>';
+                    }
+                    const isManual = ['essay', 'upload_file'].includes(s.tipe_soal);
+                    html += `
+                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                            <div class="flex gap-3 mb-2">
+                                <div class="bg-indigo-100 text-indigo-800 w-6 h-6 rounded flex items-center justify-center font-bold text-xs shrink-0">${idx+1}</div>
+                                <div class="text-sm text-gray-800 prose prose-sm">${s.pertanyaan}</div>
+                            </div>
+                            <div class="ml-9 text-sm">
+                                <div class="bg-white p-3 rounded border mb-3 text-gray-700"><strong>Jawaban:</strong> ${jawabanTampil}</div>
+                                ${!isManual ? `
+                                    <div class="text-xs font-bold text-gray-500">Skor: ${j?.skor_diperoleh || 0} / ${s.bobot_nilai}</div>
+                                ` : `
+                                    <div class="flex items-center gap-3 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                                        <label class="font-bold text-xs">Beri Skor Manual (Maks ${s.bobot_nilai}):</label>
+                                        <input type="number" class="skor-manual-input border rounded px-2 py-1 w-20 text-sm" data-jwb-id="${j?.id || ''}" max="${s.bobot_nilai}" min="0" value="${j?.skor_diperoleh || 0}">
+                                    </div>
+                                `}
+                            </div>
+                        </div>`;
+                });
+
+                html += `</div>
+                    <div class="mt-6 pt-4 border-t flex justify-end gap-3">
+                        <button onclick="closeModal()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-xl font-bold hover:bg-gray-200 transition">Batal</button>
+                        <button onclick="window.simpanKoreksi('${mhsId}', ${p})" class="bg-calm-brand text-white px-6 py-2 rounded-xl font-bold hover:bg-calm-brandHover shadow-sm"><i class="fa-solid fa-check-double mr-2"></i> Simpan Penilaian</button>
+                    </div></div>`;
+                showModal(html);
+            } catch(e) {}
+            hideLoading();
+        };
+
+        window.simpanKoreksi = async (mhsId, p) => {
+            showLoading();
+            try {
+                const inputs = document.querySelectorAll('.skor-manual-input');
+                let totalManual = 0; let updatePromises = [];
+                inputs.forEach(inp => {
+                    const val = parseFloat(inp.value) || 0;
+                    totalManual += val;
+                    const jwbId = inp.getAttribute('data-jwb-id');
+                    if(jwbId) updatePromises.push(supabaseClient.from('jawaban_mahasiswa').update({ skor_diperoleh: val, is_dinilai: true }).eq('id', jwbId));
+                });
+
+                await Promise.all(updatePromises);
+                const { data: nData } = await supabaseClient.from('nilai_pertemuan').select('*').eq('mahasiswa_id', mhsId).eq('pertemuan', p).maybeSingle();
+                
+                if(nData) {
+                    await supabaseClient.from('nilai_pertemuan').update({
+                        skor_manual: totalManual, skor_total: nData.skor_otomatis + totalManual, status_penilaian: 'selesai'
+                    }).eq('id', nData.id);
+                }
+                showToast('Koreksi disimpan', 'success');
+                closeModal();
+                window.loadNilaiData(p);
+            } catch(e) { showToast('Gagal menyimpan', 'error'); }
+            hideLoading();
+        };
+
+        async function renderAdminPengumuman(container) {
+            const { data } = await supabaseClient.from('pengumuman').select('*').order('created_at', { ascending: false });
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-gray-800">Pengumuman</h2>
+                        <p class="text-gray-500 text-sm font-medium">Kelola pengumuman untuk mahasiswa.</p>
+                    </div>
+                    <button onclick="window.formPengumuman()" class="bg-calm-brand text-white px-4 py-2 rounded-xl font-bold hover:bg-calm-brandHover shadow-sm"><i class="fa-solid fa-plus mr-2"></i>Tambah</button>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                    ${data && data.length > 0 ? data.map(p => `
+                        <div class="border-b border-gray-100 py-4 last:border-0">
+                            <h3 class="font-bold text-lg text-gray-800">${p.judul}</h3>
+                            <div class="text-sm text-gray-600 mt-1 line-clamp-3">${p.konten}</div>
+                            <div class="mt-3 flex gap-4">
+                                <button onclick="window.formPengumuman('${p.id}', '${p.judul.replace(/'/g, "\\'")}', '${p.konten.replace(/'/g, "\\'")}')" class="text-indigo-600 text-xs font-bold"><i class="fa-solid fa-pen mr-1"></i> Edit</button>
+                                <button onclick="window.delPengumuman('${p.id}')" class="text-rose-600 text-xs font-bold"><i class="fa-solid fa-trash mr-1"></i> Hapus</button>
+                            </div>
+                        </div>
+                    `).join('') : '<p class="text-gray-500 italic text-sm">Belum ada pengumuman.</p>'}
+                </div>
+            `;
+        }
+
+        window.formPengumuman = (id = null, judul = '', konten = '') => {
+            showModal(`
+                <div class="p-6">
+                    <h3 class="text-xl font-bold mb-4 border-b pb-2 pr-10">${id ? 'Edit' : 'Tambah'} Pengumuman</h3>
+                    <div class="space-y-4">
+                        <div><label class="block text-sm font-bold mb-1">Judul</label><input id="fp-judul" type="text" class="w-full border rounded-lg p-2" value="${judul}"></div>
+                        <div><label class="block text-sm font-bold mb-1">Isi Pengumuman</label><textarea id="fp-konten" rows="4" class="w-full border rounded-lg p-2">${konten}</textarea></div>
+                        <div class="flex justify-end gap-3 pt-4 mt-2 border-t">
+                            <button onclick="closeModal()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition">Batal</button>
+                            <button id="btn-save-pengumuman" class="bg-calm-brand text-white px-6 py-2 rounded-lg font-bold hover:bg-calm-brandHover transition">Simpan</button>
+                        </div>
+                    </div>
+                </div>
+            `);
+            document.getElementById('btn-save-pengumuman').onclick = async () => {
+                showLoading();
+                const j = document.getElementById('fp-judul').value;
+                const k = document.getElementById('fp-konten').value;
+                try {
+                    if (id) await supabaseClient.from('pengumuman').update({ judul: j, konten: k }).eq('id', id);
+                    else await supabaseClient.from('pengumuman').insert([{ judul: j, konten: k }]);
+                    showToast('Pengumuman disimpan', 'success');
+                    closeModal();
+                    renderAdminContent();
+                } catch(e) { showToast('Gagal menyimpan', 'error'); }
+                hideLoading();
+            }
+        };
+
+        window.delPengumuman = (id) => {
+            showConfirm('Hapus pengumuman ini?', async () => {
+                showLoading();
+                await supabaseClient.from('pengumuman').delete().eq('id', id);
+                renderAdminContent();
+                hideLoading();
+            }, true);
+        };
+
+        async function renderAdminMahasiswa(container) {
+            const { data } = await supabaseClient.from('mahasiswa').select('*').order('created_at', { ascending: false });
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-gray-800">Manajemen Mahasiswa</h2>
+                        <p class="text-gray-500 text-sm font-medium">Data mahasiswa yang sudah mendaftar.</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 border-b border-gray-200 text-sm text-gray-600">
+                                    <th class="p-4 font-bold">NIM</th><th class="p-4 font-bold">Nama Lengkap</th>
+                                    <th class="p-4 font-bold">Program Studi</th><th class="p-4 font-bold">Password</th>
+                                    <th class="p-4 font-bold text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${(data||[]).length > 0 ? data.map(m => `
+                                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                        <td class="p-4 font-bold text-gray-800">${m.nim}</td><td class="p-4 text-gray-700">${m.nama_lengkap}</td>
+                                        <td class="p-4 text-gray-700"><span class="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold">${m.prodi}</span></td>
+                                        <td class="p-4 text-gray-500 font-mono text-sm"><span class="blur-sm hover:blur-none transition-all cursor-pointer" title="Hover untuk melihat">${m.password}</span></td>
+                                        <td class="p-4 text-center"><button onclick="window.delMahasiswa('${m.id}')" class="text-rose-500 bg-rose-50 p-2 rounded hover:bg-rose-100 transition"><i class="fa-solid fa-trash"></i></button></td>
+                                    </tr>
+                                `).join('') : '<tr><td colspan="5" class="p-8 text-center text-gray-500">Belum ada mahasiswa.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.delMahasiswa = (id) => {
+            showConfirm('Hapus mahasiswa beserta seluruh nilainya?', async () => {
+                showLoading();
+                await supabaseClient.from('mahasiswa').delete().eq('id', id);
+                renderAdminContent();
+                hideLoading();
+            }, true);
+        };
+
+        function renderMhsLayout() {
+            const user = appState.currentUser.data;
+            return `
+                <div class="min-h-screen bg-slate-50 flex flex-col">
+                    <header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div class="flex justify-between items-center h-16">
+                                <div class="flex items-center gap-6">
+                                    <div class="flex items-center gap-3 cursor-pointer" onclick="navigateMhsHome()">
+                                        <div class="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md"><i class="fa-solid fa-book-open"></i></div>
+                                        <h1 class="font-black text-gray-800 text-lg hidden sm:block">LMS Matrikulasi</h1>
+                                    </div>
+                                    <!-- Menus -->
+                                    <div class="flex space-x-2">
+                                        <button onclick="navigateMhsHome()" class="px-3 py-2 text-sm font-bold rounded-lg transition-colors ${appState.mhsTab === 'home' || appState.mhsTab === 'meeting' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}"><i class="fa-solid fa-house sm:hidden"></i><span class="hidden sm:inline">Dashboard</span></button>
+                                        <button onclick="window.navigateMhsNilai()" class="px-3 py-2 text-sm font-bold rounded-lg transition-colors ${appState.mhsTab === 'nilai' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}"><i class="fa-solid fa-chart-bar sm:hidden"></i><span class="hidden sm:inline">Nilai Saya</span></button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div class="text-right hidden md:block">
+                                        <div class="text-sm font-bold text-gray-800">${user.nama_lengkap}</div>
+                                        <div class="text-[11px] text-gray-500 uppercase tracking-wider">${user.nim} • ${user.prodi}</div>
+                                    </div>
+                                    <div class="w-10 h-10 rounded-full bg-calm-100 flex items-center justify-center text-calm-700 font-bold border border-calm-200 shrink-0">${user.nama_lengkap.charAt(0)}</div>
+                                    <button onclick="logout()" class="ml-2 text-rose-500 hover:text-rose-700 bg-rose-50 p-2 rounded-lg transition-colors shrink-0"><i class="fa-solid fa-power-off"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+                    <main class="flex-1 w-full relative">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" id="mhs-content"></div>
+                    </main>
+                </div>
+            `;
+        }
+
+        async function renderMhsContent() {
+            const user = appState.currentUser.data;
+            window.navigateMhsHome = () => { appState.mhsTab = 'home'; appState.quizMode = false; renderApp(); };
+            window.navigateMhsNilai = () => { appState.mhsTab = 'nilai'; appState.quizMode = false; renderApp(); };
+            window.openMhsMeeting = (p) => { appState.activeMeeting = p; appState.mhsTab = 'meeting'; appState.quizMode = false; renderApp(); };
+            window.enterQuizMode = () => { appState.quizMode = true; renderApp(); };
+            window.exitQuizMode = () => { appState.quizMode = false; renderApp(); };
+
+            const content = document.getElementById('mhs-content');
+            if (appState.mhsTab === 'home') await renderMhsHome(content, user.id);
+            else if (appState.mhsTab === 'meeting') await renderMhsMeeting(content, user.id, appState.activeMeeting);
+            else if (appState.mhsTab === 'nilai') await renderMhsNilai(content, user.id);
+        }
+
+        async function renderMhsHome(container, mhsId) {
+            showLoading();
+            try {
+                const { data: nilaiData } = await supabaseClient.from('nilai_pertemuan').select('pertemuan, status_penilaian').eq('mahasiswa_id', mhsId);
+                const { data: materiData } = await supabaseClient.from('materi').select('pertemuan, judul, is_active').order('pertemuan', { ascending: true });
+                
+                cache.materi = materiData || [];
+                const arr = [1, 2, 3, 4, 5, 6, 7, 8];
+                
+                container.innerHTML = `
+                    <div class="flex items-center mb-6 mt-2">
+                        <div class="bg-indigo-50 text-indigo-600 p-3 rounded-xl mr-4 border border-indigo-100 shadow-inner"><i class="fa-solid fa-layer-group text-xl"></i></div>
+                        <h2 class="text-xl font-black text-gray-800">Daftar Pertemuan Kuliah</h2>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        ${arr.map(p => {
+                            const m = cache.materi.find(x => x.pertemuan === p) || { judul: 'Materi belum disiapkan', is_active: false };
+                            const n = (nilaiData || []).find(x => x.pertemuan === p);
+                            
+                            let statusText = 'Belum Dikerjakan';
+                            let statusClass = 'text-gray-500 bg-gray-50 border-gray-200';
+                            let icon = 'fa-book-open';
+                            
+                            if (n) {
+                                if (n.status_penilaian === 'selesai') {
+                                    statusText = 'Selesai Dinilai'; statusClass = 'text-green-600 bg-green-50 border-green-200'; icon = 'fa-check-circle text-green-500';
+                                } else {
+                                    statusText = 'Menunggu Penilaian'; statusClass = 'text-yellow-600 bg-yellow-50 border-yellow-200'; icon = 'fa-clock text-yellow-500';
+                                }
+                            }
+                            if(!m.is_active) { statusText = 'Materi Dikunci'; statusClass = 'text-rose-500 bg-rose-50 border-rose-200'; icon = 'fa-lock text-rose-400'; }
+
+                            const bgHover = p === 8 ? 'hover:border-rose-300 hover:shadow-rose-100/50' : 'hover:border-calm-400 hover:shadow-calm-100/50';
+                            const accent = p === 8 ? 'bg-rose-50 border-rose-100' : 'bg-calm-50 border-calm-100';
+
+                            return `
+                            <div onclick="${m.is_active ? `openMhsMeeting(${p})` : `showToast('Materi belum dibuka oleh dosen', 'warning')`}" class="bg-white rounded-3xl shadow-sm hover:shadow-xl border-2 border-gray-100 p-6 cursor-pointer transition-all transform hover:-translate-y-1.5 flex flex-col min-h-[12rem] h-full relative overflow-hidden group ${bgHover} ${!m.is_active ? 'opacity-70 cursor-not-allowed' : ''}">
+                                <div class="absolute top-0 right-0 ${accent} border-b border-l px-3 py-1.5 rounded-bl-xl text-[10px] font-black tracking-widest text-gray-600 uppercase">P - ${p}</div>
+                                <div class="flex justify-between items-start mb-3">
+                                    <div class="${accent} p-3 rounded-xl shadow-inner border group-hover:scale-110 transition-transform"><i class="fa-solid ${icon} text-xl"></i></div>
+                                </div>
+                                <h4 class="font-extrabold text-gray-800 text-sm mb-3 leading-snug pr-4">${m.judul}</h4>
+                                <div class="mt-auto pt-4 flex items-center justify-between border-t border-gray-50">
+                                    <span class="text-[11px] px-3 py-1.5 rounded-lg border font-bold ${statusClass}">${statusText}</span>
+                                </div>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } catch (err) { showToast('Gagal memuat daftar pertemuan', 'error'); }
+            hideLoading();
+        }
+
+        async function renderMhsNilai(container, mhsId) {
+            showLoading();
+            try {
+                const { data: nilaiData } = await supabaseClient.from('nilai_pertemuan').select('*').eq('mahasiswa_id', mhsId).order('pertemuan', { ascending: true });
+                const arr = [1,2,3,4,5,6,7,8];
+
+                let html = `
+                    <div class="flex items-center mb-6 mt-2">
+                        <div class="bg-indigo-50 text-indigo-600 p-3 rounded-xl mr-4 border border-indigo-100 shadow-inner"><i class="fa-solid fa-award text-xl"></i></div>
+                        <h2 class="text-xl font-black text-gray-800">Transkrip Nilai Sementara</h2>
+                    </div>
+                    <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 border-b border-gray-200 text-sm text-gray-600">
+                                        <th class="p-5 font-bold">Pertemuan</th>
+                                        <th class="p-5 font-bold text-center">Skor PG Otomatis</th>
+                                        <th class="p-5 font-bold text-center">Skor Manual (Essay/Tugas)</th>
+                                        <th class="p-5 font-bold text-center">Total Nilai</th>
+                                        <th class="p-5 font-bold text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+
+                let accumTotal = 0; let testedCount = 0;
+                arr.forEach(p => {
+                    const n = (nilaiData||[]).find(x => x.pertemuan === p);
+                    if(!n) {
+                        html += `
+                            <tr class="border-b border-gray-100">
+                                <td class="p-5 font-bold text-gray-800">Pertemuan ${p} ${p===8?'(Final Test)':''}</td>
+                                <td class="p-5 text-center text-gray-400">-</td><td class="p-5 text-center text-gray-400">-</td><td class="p-5 text-center text-gray-400">-</td>
+                                <td class="p-5 text-center"><span class="bg-gray-100 text-gray-500 px-3 py-1 rounded-lg text-xs font-bold">Belum Ada Nilai</span></td>
+                            </tr>`;
+                    } else {
+                        accumTotal += n.skor_total; testedCount++;
+                        const isSelesai = n.status_penilaian === 'selesai';
+                        const statusClass = isSelesai ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+                        const statusText = isSelesai ? 'Lengkap & Dinilai' : 'Menunggu Koreksi Dosen';
+                        html += `
+                            <tr class="border-b border-gray-100 hover:bg-gray-50 transition">
+                                <td class="p-5 font-bold text-indigo-900">Pertemuan ${p} ${p===8?'(Final Test)':''}</td>
+                                <td class="p-5 text-center font-bold text-gray-600">${n.skor_otomatis}</td>
+                                <td class="p-5 text-center font-bold text-indigo-600">${isSelesai ? n.skor_manual : '<i class="fa-solid fa-clock text-amber-500"></i>'}</td>
+                                <td class="p-5 text-center font-black text-gray-900 text-lg">${isSelesai ? n.skor_total : '<span class="text-xs text-amber-500 italic">Menunggu</span>'}</td>
+                                <td class="p-5 text-center"><span class="${statusClass} px-3 py-1 rounded-lg text-xs font-bold">${statusText}</span></td>
+                            </tr>`;
+                    }
+                });
+
+                html += `
+                                </tbody>
+                                <tfoot>
+                                    <tr class="bg-indigo-50 border-t-2 border-indigo-100">
+                                        <td colspan="3" class="p-5 font-black text-indigo-900 text-right">Rata-rata Nilai Akhir (Sementara):</td>
+                                        <td class="p-5 text-center font-black text-indigo-700 text-2xl">${testedCount > 0 ? (accumTotal/testedCount).toFixed(1) : 0}</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML = html;
+            } catch(e) { showToast('Gagal memuat nilai', 'error'); }
+            hideLoading();
+        }
+
+        async function renderMhsMeeting(container, mhsId, p) {
+            showLoading();
+            try {
+                const { data: materiArray } = await supabaseClient.from('materi').select('*').eq('pertemuan', p);
+                const materiData = materiArray?.[0] || { judul: 'Materi belum tersedia', konten: '' };
+                const { data: rtData } = await supabaseClient.from('reading_text').select('*').eq('pertemuan', p);
+                const safeRT = rtData || [];
+                const { data: soalDataRaw } = await supabaseClient.from('soal').select('*').eq('pertemuan', p).order('created_at', { ascending: true });
+                const safeSoal = soalDataRaw || [];
+                const { data: nilaiArr } = await supabaseClient.from('nilai_pertemuan').select('*').eq('mahasiswa_id', mhsId).eq('pertemuan', p);
+                const nilaiData = nilaiArr?.[0];
+                const hasSubmitted = !!nilaiData;
+
+                let mediaHtml = '';
+                if (materiData.media_link) {
+                    const url = materiData.media_link;
+                    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                        const vidId = url.split('v=')[1]?.split('&')[0] || url.split('youtu.be/')[1];
+                        if(vidId) mediaHtml = `<div class="aspect-w-16 aspect-h-9 mb-6 rounded-2xl overflow-hidden shadow-md bg-black"><iframe src="https://www.youtube.com/embed/${vidId}" frameborder="0" allowfullscreen class="w-full h-[400px]"></iframe></div>`;
+                    } else if (url.match(/\.(mp4|webm)$/i)) {
+                        mediaHtml = `<video controls class="w-full rounded-2xl shadow-md mb-6 bg-black h-[400px]"><source src="${url}"></video>`;
+                    } else if (url.match(/\.(mp3|wav)$/i)) {
+                        mediaHtml = `<audio controls class="w-full mb-6 shadow-sm rounded-full"><source src="${url}"></audio>`;
+                    } else {
+                        mediaHtml = `<a href="${url}" target="_blank" class="block mb-6 p-5 bg-white hover:bg-blue-50 transition-all border-2 border-blue-100 text-blue-700 rounded-2xl text-[15px] font-bold flex items-center justify-center gap-3 shadow-sm group"><i class="fa-solid fa-up-right-from-square text-xl"></i> Buka Materi Eksternal</a>`;
+                    }
+                }
+
+                let viewContent = '';
+                if (!appState.quizMode) {
+                    viewContent = `
+                        <button onclick="navigateMhsHome()" class="mb-6 text-sm bg-white border px-5 py-2.5 rounded-xl text-gray-600 hover:text-calm-brand hover:border-calm-300 font-bold inline-flex items-center transition-all"><i class="fa-solid fa-arrow-left mr-2"></i> Kembali ke Dashboard</button>
+                        <div class="max-w-4xl mx-auto space-y-6 pb-12">
+                            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 md:p-10 relative overflow-hidden">
+                                <div class="absolute top-0 right-0 bg-calm-50 border-b border-l border-calm-100 px-4 py-1.5 rounded-bl-xl text-[11px] font-black tracking-widest text-calm-600 uppercase shadow-sm">Pertemuan ${p}</div>
+                                <h2 class="text-3xl font-black text-gray-900 mb-6 leading-tight pr-20">${materiData.judul}</h2>
+                                ${mediaHtml}
+                                <div class="prose prose-sm md:prose-base text-gray-700 mt-5 font-medium leading-relaxed">${materiData.konten || ''}</div>
+                            </div>
+                            
+                            ${safeRT.length > 0 ? `
+                            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 md:p-8">
+                                <h3 class="font-extrabold text-gray-800 mb-5 pb-3 border-b-2 border-gray-100 flex items-center text-lg"><i class="fa-solid fa-book-open-reader text-calm-brand mr-3 text-2xl"></i> Referensi Bacaan (Text)</h3>
+                                <div class="space-y-5">
+                                    ${safeRT.map(rt => `
+                                        <div class="bg-yellow-50/50 p-5 md:p-6 rounded-2xl border border-yellow-200 shadow-sm relative overflow-hidden">
+                                            <div class="absolute top-0 right-0 text-6xl text-yellow-500 opacity-5 -mt-2 -mr-2"><i class="fa-solid fa-quote-right"></i></div>
+                                            ${rt.judul ? `<h4 class="font-black text-[15px] text-gray-800 mb-3 flex items-start gap-2 relative z-10"><i class="fa-solid fa-bookmark text-yellow-500 mt-0.5"></i>${rt.judul}</h4>` : ''}
+                                            <div class="prose prose-sm text-gray-700 font-medium leading-relaxed relative z-10">${rt.konten}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            ` : ''}
+
+                            <div class="bg-gradient-to-r from-calm-50 to-indigo-50 rounded-3xl shadow-sm border border-calm-200 p-8 text-center mt-8 relative overflow-hidden">
+                                <div class="absolute -right-4 -bottom-4 opacity-10"><i class="fa-solid fa-pen-clip text-9xl text-calm-brand"></i></div>
+                                <h3 class="text-2xl font-black text-gray-900 mb-2 relative z-10">Evaluasi Pertemuan ${p}</h3>
+                                <p class="text-gray-600 mb-6 font-medium max-w-lg mx-auto relative z-10">Pelajari materi di atas dengan saksama sebelum mulai mengerjakan kuis atau tugas.</p>
+                                
+                                ${hasSubmitted 
+                                    ? `<button onclick="enterQuizMode()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-xl font-bold shadow-md transition-transform active:scale-95 inline-flex items-center gap-2 relative z-10"><i class="fa-solid fa-clipboard-check text-lg"></i> Lihat Hasil Evaluasi</button>`
+                                    : `<button onclick="enterQuizMode()" class="bg-calm-brand hover:bg-calm-brandHover text-white px-8 py-3.5 rounded-xl font-bold shadow-lg shadow-calm-brand/30 transition-transform active:scale-95 inline-flex items-center gap-2 relative z-10"><i class="fa-solid fa-play text-lg"></i> Kerjakan Kuis / Tugas</button>`
+                                }
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    viewContent = `
+                        <button onclick="exitQuizMode()" class="mb-6 text-sm bg-white border border-gray-200 px-5 py-2.5 rounded-xl text-gray-600 hover:text-calm-brand hover:border-calm-300 font-bold inline-flex items-center transition-all"><i class="fa-solid fa-arrow-left mr-2"></i> Kembali ke Materi</button>
+                        <div class="max-w-4xl mx-auto pb-12">
+                            <div class="bg-white rounded-3xl shadow-xl border border-gray-200 p-6 md:p-10 relative overflow-hidden min-h-[500px]">
+                                ${hasSubmitted ? renderHasilKuis(nilaiData) : renderFormKuis(safeSoal, p, safeRT)}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                container.innerHTML = viewContent;
+
+                if (appState.quizMode && !hasSubmitted && safeSoal.length > 0) {
+                    const form = document.getElementById('form-kuis');
+                    if(form) {
+                        form.onsubmit = async (e) => {
+                            e.preventDefault();
+                            showConfirm('Kirim jawaban ini? Pastikan semua soal telah terjawab.', async () => {
+                                showLoading();
+                                try {
+                                    let skorPG = 0; let hasManual = false;
+                                    const jawabanPromises = safeSoal.map(async (s) => {
+                                        let jwb = ''; let fileUrl = null; let skor = 0;
+                                        if (s.tipe_soal === 'pilihan_ganda') {
+                                            const el = document.querySelector(`input[name="ans-${s.id}"]:checked`);
+                                            if (el) { jwb = el.value; if (jwb === s.kunci_jawaban) skor = s.bobot_nilai; }
+                                            skorPG += skor;
+                                        } else if (s.tipe_soal === 'isian') {
+                                            jwb = document.getElementById(`ans-${s.id}`).value;
+                                            if(s.kunci_jawaban && jwb.toLowerCase().trim() === s.kunci_jawaban.toLowerCase().trim()) skor = s.bobot_nilai;
+                                            skorPG += skor;
+                                        } else if (s.tipe_soal === 'essay') {
+                                            jwb = document.getElementById(`ans-${s.id}`).value; hasManual = true;
+                                        } else if (s.tipe_soal === 'upload_file') {
+                                            fileUrl = 'https://dummy.url/tugas.pdf'; jwb = 'File terunggah (Simulasi)'; hasManual = true;
+                                        }
+                                        return supabaseClient.from('jawaban_mahasiswa').insert([{ mahasiswa_id: mhsId, soal_id: s.id, pertemuan: p, jawaban_teks: jwb, file_url: fileUrl, skor_diperoleh: skor }]);
+                                    });
+
+                                    await Promise.all(jawabanPromises);
+                                    await supabaseClient.from('nilai_pertemuan').insert([{ mahasiswa_id: mhsId, pertemuan: p, skor_otomatis: skorPG, skor_total: skorPG, status_penilaian: hasManual ? 'menunggu_penilaian' : 'selesai' }]);
+                                    showToast('Jawaban berhasil dikirim!', 'success');
+                                    renderApp();
+                                } catch(e) { showToast('Gagal mengirim jawaban', 'error'); }
+                                hideLoading();
+                            });
+                        };
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Gagal memuat pertemuan', 'error');
+            }
+            // CRITICAL FIX: Ensure loading overlay hides after fetching finishes
+            hideLoading(); 
+        }
+
+        function renderFormKuis(soalData, p, rtData = []) {
+            if (soalData.length === 0) return `
+                <div class="text-center py-16 flex flex-col items-center justify-center">
+                    <div class="bg-gray-50 p-8 rounded-full border-4 border-dashed border-gray-200 mb-5 shadow-inner"><i class="fa-regular fa-face-smile-wink text-7xl text-gray-400"></i></div>
+                    <h3 class="text-2xl font-black text-gray-800 mb-2">Belum ada Kuis/Tugas</h3>
+                    <p class="text-gray-500 font-medium text-[15px]">Tugas untuk pertemuan ini belum disiapkan dosen.</p>
+                </div>`;
+
+            return `
+                <div class="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[11px] tracking-widest font-black px-5 py-2 rounded-bl-2xl shadow-md uppercase"><i class="fa-solid fa-lock mr-1"></i> Mode Pengerjaan</div>
+                <h3 class="font-black text-2xl md:text-3xl text-gray-900 mb-3 pb-5 border-b-2 border-gray-100 flex items-center"><i class="fa-solid fa-pen-clip text-calm-brand mr-4 text-3xl"></i> Kuis & Tugas Pertemuan ${p}</h3>
+                
+                <form id="form-kuis" class="mt-8 space-y-10">
+                    ${soalData.map((s, idx) => {
+                        let inputHtml = '';
+                        if (s.tipe_soal === 'pilihan_ganda') {
+                            inputHtml = `<div class="space-y-3 mt-4 ml-2">
+                                ${['A','B','C','D'].map((x, i) => s.pilihan_jawaban && s.pilihan_jawaban[i] ? `
+                                    <label class="flex items-start gap-4 p-4 border rounded-xl cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition group has-[:checked]:bg-indigo-50 has-[:checked]:border-calm-brand has-[:checked]:shadow-sm">
+                                        <input type="radio" name="ans-${s.id}" value="${x}" required class="mt-1 w-4 h-4 text-calm-brand">
+                                        <span class="font-bold text-gray-700 w-4">${x}.</span>
+                                        <span class="text-gray-700 font-medium">${s.pilihan_jawaban[i]}</span>
+                                    </label>
+                                ` : '').join('')}
+                            </div>`;
+                        } else if (s.tipe_soal === 'isian') {
+                            inputHtml = `<input type="text" id="ans-${s.id}" required class="mt-4 w-full border-2 border-gray-200 rounded-xl p-4 focus:border-calm-brand bg-gray-50 outline-none text-gray-800 font-medium" placeholder="Ketik jawaban singkat...">`;
+                        } else if (s.tipe_soal === 'essay') {
+                            inputHtml = `<textarea id="ans-${s.id}" required rows="5" class="mt-4 w-full border-2 border-gray-200 rounded-xl p-4 focus:border-calm-brand bg-gray-50 outline-none text-gray-800 font-medium leading-relaxed" placeholder="Ketik deskripsi essay..."></textarea>`;
+                        } else if (s.tipe_soal === 'upload_file') {
+                            inputHtml = `<div class="mt-4 border-2 border-dashed border-gray-300 rounded-xl p-8 text-center bg-gray-50"><i class="fa-solid fa-cloud-arrow-up text-4xl text-gray-400 mb-3"></i><p class="text-sm font-bold text-gray-700">Pilih file unggahan</p><input type="file" id="ans-${s.id}" required class="mt-4 text-sm max-w-xs mx-auto block"></div>`;
+                        }
+
+                        let rtHtml = '';
+                        if (s.reading_text_id) {
+                            const rt = rtData.find(x => x.id === s.reading_text_id);
+                            if (rt) {
+                                rtHtml = `
+                                <div class="mb-4 p-5 bg-yellow-50/50 rounded-xl border border-yellow-200 text-sm shadow-inner">
+                                    <h4 class="font-bold text-yellow-800 mb-2 border-b border-yellow-200 pb-2"><i class="fa-solid fa-book-open mr-2"></i>Referensi Bacaan: ${rt.judul}</h4>
+                                    <div class="text-gray-700 prose prose-sm max-h-48 overflow-y-auto pr-2 custom-scrollbar">${rt.konten}</div>
+                                </div>`;
+                            }
+                        }
+
+                        return `
+                        <div class="relative bg-white border border-gray-100 rounded-2xl p-6 md:p-8 shadow-sm">
+                            <div class="absolute -top-3 -right-3 text-[10px] bg-gray-100 border text-gray-500 font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">Soal ${idx+1}</div>
+                            <div class="flex items-start gap-4">
+                                <div class="w-10 h-10 shrink-0 bg-calm-800 text-white font-black rounded-xl flex items-center justify-center text-lg shadow-md">${idx+1}</div>
+                                <div class="flex-1 w-full min-w-0">
+                                    <span class="text-[10px] border border-gray-200 text-gray-500 font-bold px-2 py-1 rounded-md uppercase tracking-wide mb-3 inline-block">Bobot: ${s.bobot_nilai} Poin</span>
+                                    ${rtHtml}
+                                    <div class="text-[15px] text-gray-900 font-bold leading-relaxed prose prose-sm">${s.pertanyaan}</div>
+                                    ${inputHtml}
+                                </div>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                    <div class="pt-6 border-t-2 border-gray-100 flex justify-end">
+                        <button type="submit" class="bg-calm-brand hover:bg-calm-brandHover text-white px-10 py-4 rounded-xl font-bold shadow-lg shadow-calm-brand/30 transition-transform active:scale-95 text-lg flex items-center gap-3">
+                            <i class="fa-solid fa-paper-plane"></i> Kirim Jawaban
+                        </button>
+                    </div>
+                </form>
+            `;
+        }
+
+        function renderHasilKuis(nilaiData) {
+            return `
+                <div class="text-center py-10 flex flex-col items-center">
+                    <div class="inline-flex items-center justify-center w-24 h-24 rounded-full bg-emerald-100 text-emerald-600 mb-6 shadow-inner border-4 border-white outline outline-1 outline-emerald-200">
+                        <i class="fa-solid fa-check text-5xl"></i>
+                    </div>
+                    <h3 class="text-3xl font-black text-gray-800 mb-3">Tugas Selesai Dikirim</h3>
+                    
+                    <div class="bg-gray-50 p-6 rounded-2xl border w-full max-w-sm mx-auto mt-6">
+                        <p class="text-sm text-gray-500 font-bold uppercase tracking-widest mb-1">Status Penilaian</p>
+                        <p class="text-lg font-black ${nilaiData.status_penilaian === 'selesai' ? 'text-emerald-600' : 'text-amber-500'} flex items-center justify-center gap-2">
+                            <i class="fa-solid ${nilaiData.status_penilaian === 'selesai' ? 'fa-circle-check' : 'fa-clock'}"></i>
+                            ${nilaiData.status_penilaian === 'selesai' ? 'Telah Dinilai' : 'Menunggu Koreksi'}
+                        </p>
+                        
+                        <div class="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center px-4">
+                            <div class="text-left">
+                                <span class="block text-xs font-bold text-gray-400 uppercase">Skor Saat Ini</span>
+                                <span class="block text-4xl font-black text-gray-900">${nilaiData.skor_total}</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="block text-xs font-bold text-gray-400 uppercase">Otomatis PG</span>
+                                <span class="block text-xl font-black text-gray-600">${nilaiData.skor_otomatis}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        renderApp();
+    </script>
+</body>
+</html>
