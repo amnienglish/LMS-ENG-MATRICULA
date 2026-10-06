@@ -507,11 +507,30 @@
                     <h3 class="text-xl font-bold mb-4 border-b pb-2 pr-10">Edit Materi Pertemuan ${m.pertemuan}</h3>
                     <div class="space-y-4">
                         <div><label class="block text-sm font-bold mb-1">Judul Materi</label><input id="em-judul" type="text" class="w-full border rounded-lg p-2" value="${m.judul}"></div>
-                        <div><label class="block text-sm font-bold mb-1">Link Video/Audio (Opsional)</label><input id="em-media" type="url" class="w-full border rounded-lg p-2" value="${m.media_link || ''}"></div>
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                            <div class="flex flex-wrap justify-between items-center gap-2">
+                                <label class="block text-sm font-bold text-gray-800"><i class="fa-solid fa-headphones text-calm-brand mr-1.5"></i>Media Audio / Video Utama (Opsional)</label>
+                                <div class="flex items-center gap-2">
+                                    <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1.5">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i> Unggah File Audio
+                                        <input type="file" accept="audio/*" class="hidden" onchange="window.uploadAudioMateri(event, 'main')">
+                                    </label>
+                                    <button type="button" onclick="window.clearAudioMateri()" class="text-xs bg-rose-50 text-rose-600 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg font-bold border border-rose-200 transition" title="Hapus Media">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <input id="em-media" type="text" oninput="window.previewMainAudio(this.value)" class="w-full border border-gray-300 rounded-lg p-2 text-xs bg-white focus:border-calm-brand outline-none" placeholder="Tempel link YouTube / MP3 / Audio, atau klik 'Unggah File Audio' di atas..." value="${m.media_link || ''}">
+                            <div id="em-audio-preview" class="hidden pt-1"></div>
+                        </div>
                         <div>
                             <div class="flex flex-wrap justify-between items-center mb-2 gap-2">
                                 <label class="block text-sm font-bold">Konten Materi</label>
                                 <div class="flex flex-wrap items-center gap-1.5">
+                                    <label class="cursor-pointer text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1 border border-purple-200" title="Sisipkan Audio Player di dalam Konten Materi">
+                                        <i class="fa-solid fa-file-audio"></i> + Sisipkan Audio
+                                        <input type="file" accept="audio/*" class="hidden" onchange="window.uploadAudioMateri(event, 'inline')">
+                                    </label>
                                     <button type="button" onclick="window.toggleMateriPanel('table')" class="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1 border border-indigo-200" title="Sisipkan Tabel">
                                         <i class="fa-solid fa-table"></i> + Tabel
                                     </button>
@@ -604,8 +623,109 @@
             const rawHtmlEl = document.getElementById('materi-raw-html');
             const previewEl = document.getElementById('materi-html-preview');
 
-            // Deteksi apakah konten memiliki elemen HTML kompleks / CSS (<div, <style, <table, style=, class=)
-            const hasComplexHtmlCss = (str) => /<(div|style|table|section|article|span|header|footer|aside|nav)|style\s*=|class\s*=/i.test(str);
+            // Deteksi apakah konten memiliki elemen HTML kompleks / CSS (<div, <style, <table, <audio, style=, class=)
+            const hasComplexHtmlCss = (str) => /<(div|style|table|audio|section|article|span|header|footer|aside|nav)|style\s*=|class\s*=/i.test(str);
+
+            const isAudioSource = (url) => {
+                if (!url) return false;
+                return /^data:audio\//i.test(url) || /\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?.*)?$/i.test(url) || url.includes('/media_lms/audio_');
+            };
+
+            window.previewMainAudio = (url) => {
+                const container = document.getElementById('em-audio-preview');
+                if (!container) return;
+                if (isAudioSource(url)) {
+                    container.classList.remove('hidden');
+                    container.innerHTML = `
+                        <div class="bg-indigo-50/80 border border-indigo-200 rounded-xl p-3 flex flex-col gap-1.5">
+                            <span class="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5"><i class="fa-solid fa-volume-high text-indigo-600"></i> Pratinjau Audio Player (Siap Diputar Mahasiswa):</span>
+                            <audio controls class="w-full h-10"><source src="${url}"></audio>
+                        </div>`;
+                } else {
+                    container.classList.add('hidden');
+                    container.innerHTML = '';
+                }
+            };
+
+            window.clearAudioMateri = () => {
+                const mediaInput = document.getElementById('em-media');
+                if (mediaInput) {
+                    mediaInput.value = '';
+                    window.previewMainAudio('');
+                    showToast('Media utama dikosongkan', 'info');
+                }
+            };
+
+            window.uploadAudioMateri = async (event, target = 'main') => {
+                const file = event.target.files[0];
+                if (!file) return;
+                if (!file.type.startsWith('audio/')) {
+                    showToast('Format file harus berupa Audio (MP3, WAV, M4A, OGG, dll)!', 'error');
+                    event.target.value = '';
+                    return;
+                }
+                if (file.size > 15 * 1024 * 1024) {
+                    showToast('Ukuran file audio maksimal 15 MB!', 'warning');
+                    event.target.value = '';
+                    return;
+                }
+
+                showLoading();
+                try {
+                    let finalAudioUrl = null;
+                    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                    const filePath = `audio_${m.pertemuan}_${Date.now()}_${cleanName}`;
+
+                    // 1. Coba unggah ke Supabase Storage bucket 'media_lms'
+                    const { data: upData, error: upErr } = await supabaseClient.storage
+                        .from('media_lms')
+                        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+                    if (!upErr && upData) {
+                        const { data: pubData } = supabaseClient.storage.from('media_lms').getPublicUrl(filePath);
+                        if (pubData && pubData.publicUrl) {
+                            finalAudioUrl = pubData.publicUrl;
+                        }
+                    }
+
+                    // 2. Fallback ke Data URL (Base64) jika Storage RLS memblokir agar tetap 100% berjalan tanpa error
+                    if (!finalAudioUrl) {
+                        finalAudioUrl = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.onerror = (err) => reject(err);
+                            reader.readAsDataURL(file);
+                        });
+                    }
+
+                    if (target === 'main') {
+                        const mediaInput = document.getElementById('em-media');
+                        if (mediaInput) {
+                            mediaInput.value = finalAudioUrl;
+                            window.previewMainAudio(finalAudioUrl);
+                        }
+                        showToast(`Audio "${file.name}" berhasil diunggah sebagai Audio Utama!`, 'success');
+                    } else {
+                        const audioSnippet = `\n<div class="my-4 p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl shadow-sm">\n  <div class="text-xs font-bold text-indigo-900 mb-2 flex items-center gap-2"><i class="fa-solid fa-headphones text-indigo-600"></i> Audio Listening: ${file.name}</div>\n  <audio controls preload="metadata" class="w-full"><source src="${finalAudioUrl}" type="${file.type}">Browser Anda tidak mendukung pemutar audio.</audio>\n</div>\n`;
+                        const baseHtml = (!document.getElementById('materi-panel-html').classList.contains('hidden'))
+                            ? rawHtmlEl.value
+                            : (hasComplexHtmlCss(currentRawHtml) ? currentRawHtml : quill.root.innerHTML);
+
+                        currentRawHtml = (baseHtml === '<p><br></p>' ? '' : baseHtml) + audioSnippet;
+                        rawHtmlEl.value = currentRawHtml;
+                        window.updateHtmlLivePreview();
+                        window.toggleMateriPanel('html');
+                        showToast(`Audio Player "${file.name}" berhasil disisipkan ke dalam konten materi!`, 'success');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast('Gagal mengunggah file audio', 'error');
+                }
+                event.target.value = '';
+                hideLoading();
+            };
+
+            window.previewMainAudio(m.media_link || '');
 
             window.updateHtmlLivePreview = () => {
                 if (!rawHtmlEl || !previewEl) return;
@@ -1912,13 +2032,26 @@ KEY: A`;
                 let mediaHtml = '';
                 if (materiData.media_link) {
                     const url = materiData.media_link;
+                    const isAudioUrl = /^data:audio\//i.test(url) || /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(url) || url.includes('/media_lms/audio_');
                     if (url.includes('youtube.com') || url.includes('youtu.be')) {
                         const vidId = url.split('v=')[1]?.split('&')[0] || url.split('youtu.be/')[1];
                         if(vidId) mediaHtml = `<div class="aspect-w-16 aspect-h-9 mb-6 rounded-2xl overflow-hidden shadow-md bg-black"><iframe src="https://www.youtube.com/embed/${vidId}" frameborder="0" allowfullscreen class="w-full h-[400px]"></iframe></div>`;
+                    } else if (isAudioUrl) {
+                        mediaHtml = `
+                        <div class="mb-6 p-5 bg-gradient-to-r from-indigo-50 via-slate-50 to-indigo-50 border border-indigo-200 rounded-2xl shadow-sm">
+                            <div class="flex items-center gap-3 mb-3">
+                                <div class="w-10 h-10 rounded-xl bg-calm-brand text-white flex items-center justify-center shadow-sm shrink-0">
+                                    <i class="fa-solid fa-headphones text-lg"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-black text-gray-800 leading-tight">Audio Materi / Listening</h4>
+                                    <p class="text-xs text-gray-500 font-medium">Klik tombol Play di bawah untuk mendengarkan materi audio</p>
+                                </div>
+                            </div>
+                            <audio controls preload="metadata" class="w-full rounded-lg"><source src="${url}">Browser Anda tidak mendukung pemutar audio.</audio>
+                        </div>`;
                     } else if (url.match(/\.(mp4|webm)$/i)) {
                         mediaHtml = `<video controls class="w-full rounded-2xl shadow-md mb-6 bg-black h-[400px]"><source src="${url}"></video>`;
-                    } else if (url.match(/\.(mp3|wav)$/i)) {
-                        mediaHtml = `<audio controls class="w-full mb-6 shadow-sm rounded-full"><source src="${url}"></audio>`;
                     } else {
                         mediaHtml = `<a href="${url}" target="_blank" class="block mb-6 p-5 bg-white hover:bg-blue-50 transition-all border-2 border-blue-100 text-blue-700 rounded-2xl text-[15px] font-bold flex items-center justify-center gap-3 shadow-sm group"><i class="fa-solid fa-up-right-from-square text-xl"></i> Buka Materi Eksternal</a>`;
                     }
